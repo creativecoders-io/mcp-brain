@@ -1,1 +1,25 @@
+version: '3.8'
 
+services:
+  brain-mcp:
+    build: .
+    container_name: brain-mcp
+    environment:
+      - BRAIN_PATH=${BRAIN_PATH:-/brain}
+      - BRAIN_MAX_RESULTS=${BRAIN_MAX_RESULTS:-10}
+      - BRAIN_MAX_FILE_SIZE=${BRAIN_MAX_FILE_SIZE:-1048576}
+    volumes:
+      - ./brain:/brain:ro
+    stdin_open: true  # Equivalent to -i flag (keeps stdin open)
+    tty: true         # Equivalent to -t flag (allocates pseudo-TTY)
+    # If HTTP transport is added later, expose a port here:
+    # ports:
+    #   - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - mcp-network
+
+networks:
+  mcp-network:
+    driver: bridge
+    name: mcp-network
