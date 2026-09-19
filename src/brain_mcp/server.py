@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
-from .brain import list_notes, read_note, search_notes
+from .brain import list_notes, read_note, search_notes, write_note
 from .config import load_settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -35,9 +36,22 @@ def read_note_tool(path: str) -> dict[str, Any]:
 	return read_note(settings=settings, path=path)
 
 
+@app.tool(name="write_note", description="Write or overwrite a note in the brain directory. Use Inbox/ as default folder when no specific path is given.")
+def write_note_tool(path: str, content: str) -> dict[str, Any]:
+	"""Write a note at a relative path within the brain."""
+	return write_note(settings=settings, path=path, content=content)
+
+
 def main() -> None:
-	logger.info("Starting brain MCP server with stdio transport...")
-	app.run("stdio")
+	transport = os.getenv("MCP_TRANSPORT", "stdio")
+	if transport == "http":
+		host = os.getenv("MCP_HOST", "0.0.0.0")
+		port = int(os.getenv("PORT", "8002"))
+		logger.info(f"Starting brain MCP server with SSE transport on {host}:{port}...")
+		app.run("sse", host=host, port=port)
+	else:
+		logger.info("Starting brain MCP server with stdio transport...")
+		app.run("stdio")
 
 
 if __name__ == "__main__":

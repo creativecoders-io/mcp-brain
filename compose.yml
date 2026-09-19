@@ -5,16 +5,14 @@ services:
     build: .
     container_name: brain-mcp
     environment:
-      - BRAIN_PATH=${BRAIN_PATH:-/brain}
-      - BRAIN_MAX_RESULTS=${BRAIN_MAX_RESULTS:-10}
-      - BRAIN_MAX_FILE_SIZE=${BRAIN_MAX_FILE_SIZE:-1048576}
+      MCP_TRANSPORT: http
+      PORT: "8002"
+      MCP_HOST: "0.0.0.0"
+      BRAIN_PATH: /brain
+    expose:
+      - "8002"
     volumes:
-      - ./brain:/brain:ro
-    stdin_open: true  # Equivalent to -i flag (keeps stdin open)
-    tty: true         # Equivalent to -t flag (allocates pseudo-TTY)
-    # If HTTP transport is added later, expose a port here:
-    # ports:
-    #   - "8000:8000"
+      - ./brain:/brain
     restart: unless-stopped
     networks:
       - mcp-network

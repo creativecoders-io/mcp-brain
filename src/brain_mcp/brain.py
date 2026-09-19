@@ -73,68 +73,93 @@ def read_note(settings: Settings, path: str) -> dict[str, Any]:
 
 
 def search_notes(settings: Settings, query: str) -> dict[str, Any]:
-	"""Search note file names and contents for a case-insensitive query."""
+	"""Search notes using BM25 ranking over filenames and content."""
+	from rank_bm25 import BM25Plus
+
 	_require_root_exists(settings)
 
-	needle = query.strip().lower()
+	needle = query.strip()
 	if not needle:
 		raise ValueError("query must not be empty")
 
-	matches: list[dict[str, Any]] = []
-	files_scanned = 0
-
+	# Collect all readable files
+	candidates: list[tuple[Path, str]] = []
 	for file_path in sorted(settings.brain_path.rglob("*")):
 		if not file_path.is_file():
 			continue
-
-		files_scanned += 1
-
-		size = file_path.stat().st_size
-		if size > settings.max_file_size:
+		if file_path.stat().st_size > settings.max_file_size:
 			continue
-
-		rel = _to_relative(settings, file_path)
-		haystack_name = file_path.name.lower()
-
-		content = ""
 		try:
 			content = file_path.read_text(encoding="utf-8")
 		except UnicodeDecodeError:
-			# Skip binary/non-text files.
 			continue
+		# Include filename in the indexed text so filename matches score well
+		candidates.append((file_path, f"{file_path.stem} {content}"))
 
-		haystack_content = content.lower()
+	if not candidates:
+		return {"query": query, "files_scanned": 0, "count": 0,
+				"max_results": settings.max_results, "matches": []}
 
-		if needle not in haystack_name and needle not in haystack_content:
-			continue
+	# Tokenise: lowercase split on whitespace/punctuation
+	import re
+	def tokenise(text: str) -> list[str]:
+		return re.findall(r"[^\s\W]+", text.lower())
 
+	corpus = [tokenise(doc) for _, doc in candidates]
+	query_tokens = tokenise(needle)
+
+	bm25 = BM25Plus(corpus)
+	scores = bm25.get_scores(query_tokens)
+
+	# Pair files with scores, filter zeros, sort descending
+	ranked = sorted(
+		[(candidates[i][0], float(scores[i])) for i in range(len(candidates)) if scores[i] > 0],
+		key=lambda x: x[1],
+		reverse=True,
+	)
+
+	matches: list[dict[str, Any]] = []
+	for file_path, score in ranked[: settings.max_results]:
+		content = file_path.read_text(encoding="utf-8")
+		rel = _to_relative(settings, file_path)
+
+		# Find first matching line for the snippet
 		snippet = ""
 		line_number = None
 		for idx, line in enumerate(content.splitlines(), start=1):
-			if needle in line.lower():
+			if any(t in line.lower() for t in tokenise(needle)):
 				line_number = idx
 				snippet = line.strip()
 				if len(snippet) > 240:
 					snippet = f"{snippet[:237]}..."
 				break
 
-		matches.append(
-			{
-				"path": rel,
-				"size": size,
-				"line": line_number,
-				"snippet": snippet,
-			}
-		)
-
-		if len(matches) >= settings.max_results:
-			break
+		matches.append({
+			"path": rel,
+			"size": file_path.stat().st_size,
+			"score": round(score, 4),
+			"line": line_number,
+			"snippet": snippet,
+		})
 
 	return {
 		"query": query,
-		"files_scanned": files_scanned,
+		"files_scanned": len(candidates),
 		"count": len(matches),
 		"max_results": settings.max_results,
 		"matches": matches,
+	}
+
+
+def write_note(settings: Settings, path: str, content: str) -> dict[str, Any]:
+	"""Write or overwrite a note file within the brain directory."""
+	_require_root_exists(settings)
+	target = resolve_user_path(settings.brain_path, path)
+	target.parent.mkdir(parents=True, exist_ok=True)
+	target.write_text(content, encoding="utf-8")
+	return {
+		"path": _to_relative(settings, target),
+		"size": target.stat().st_size,
+		"written": True,
 	}
 
