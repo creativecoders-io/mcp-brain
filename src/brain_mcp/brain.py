@@ -2,11 +2,37 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 from .config import Settings
 from .security import resolve_user_path
+
+logger = logging.getLogger(__name__)
+
+
+def _extract_pdf_text(path: Path) -> str | None:
+	"""Extract plain text from a PDF. Returns None if the PDF has no extractable text."""
+	try:
+		from pypdf import PdfReader
+		reader = PdfReader(str(path))
+		pages = [page.extract_text() or "" for page in reader.pages]
+		text = "\n".join(pages).strip()
+		return text if text else None
+	except Exception as exc:
+		logger.debug("Could not extract text from %s: %s", path.name, exc)
+		return None
+
+
+def _read_file_text(path: Path) -> str | None:
+	"""Return the text content of a file, handling both plain text and PDFs."""
+	if path.suffix.lower() == ".pdf":
+		return _extract_pdf_text(path)
+	try:
+		return path.read_text(encoding="utf-8")
+	except (UnicodeDecodeError, OSError):
+		return None
 
 
 def _require_root_exists(settings: Settings) -> None:
@@ -64,10 +90,18 @@ def read_note(settings: Settings, path: str) -> dict[str, Any]:
 			f"File too large ({size} bytes). Max allowed: {settings.max_file_size} bytes"
 		)
 
-	content = target.read_text(encoding="utf-8")
+	content = _read_file_text(target)
+	if content is None:
+		if target.suffix.lower() == ".pdf":
+			raise ValueError(
+				f"No extractable text in {path} — it may be a scanned image PDF."
+			)
+		raise ValueError(f"Could not read {path} as text.")
+
 	return {
 		"path": _to_relative(settings, target),
 		"size": size,
+		"format": "pdf" if target.suffix.lower() == ".pdf" else "text",
 		"content": content,
 	}
 
@@ -89,9 +123,8 @@ def search_notes(settings: Settings, query: str) -> dict[str, Any]:
 			continue
 		if file_path.stat().st_size > settings.max_file_size:
 			continue
-		try:
-			content = file_path.read_text(encoding="utf-8")
-		except UnicodeDecodeError:
+		content = _read_file_text(file_path)
+		if content is None:
 			continue
 		# Include filename in the indexed text so filename matches score well
 		candidates.append((file_path, f"{file_path.stem} {content}"))
@@ -120,7 +153,7 @@ def search_notes(settings: Settings, query: str) -> dict[str, Any]:
 
 	matches: list[dict[str, Any]] = []
 	for file_path, score in ranked[: settings.max_results]:
-		content = file_path.read_text(encoding="utf-8")
+		content = _read_file_text(file_path) or ""
 		rel = _to_relative(settings, file_path)
 
 		# Find first matching line for the snippet
