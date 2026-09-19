@@ -150,3 +150,16 @@ def search_notes(settings: Settings, query: str) -> dict[str, Any]:
 		"matches": matches,
 	}
 
+
+def write_note(settings: Settings, path: str, content: str) -> dict[str, Any]:
+	"""Write or overwrite a note file within the brain directory."""
+	_require_root_exists(settings)
+	target = resolve_user_path(settings.brain_path, path)
+	target.parent.mkdir(parents=True, exist_ok=True)
+	target.write_text(content, encoding="utf-8")
+	return {
+		"path": _to_relative(settings, target),
+		"size": target.stat().st_size,
+		"written": True,
+	}
+

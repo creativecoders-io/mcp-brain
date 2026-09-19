@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from brain_mcp.brain import list_notes, read_note, search_notes
+from brain_mcp.brain import list_notes, read_note, search_notes, write_note
 from brain_mcp.config import Settings
 
 
@@ -84,3 +84,27 @@ def test_search_notes_multi_term_returns_scores(brain_settings: Settings) -> Non
 	for match in result["matches"]:
 		assert "score" in match
 		assert isinstance(match["score"], float)
+
+
+def test_write_note_creates_file(brain_settings: Settings) -> None:
+	result = write_note(brain_settings, "Inbox/test-note.md", "# Test\nHello world.\n")
+	assert result["path"] == "Inbox/test-note.md"
+	written = (brain_settings.brain_path / "Inbox" / "test-note.md").read_text()
+	assert "Hello world." in written
+
+
+def test_write_note_creates_parent_dirs(brain_settings: Settings) -> None:
+	write_note(brain_settings, "Decisions/2026/q3.md", "# Decision\nContent.\n")
+	assert (brain_settings.brain_path / "Decisions" / "2026" / "q3.md").exists()
+
+
+def test_write_note_overwrites_existing(brain_settings: Settings) -> None:
+	write_note(brain_settings, "People/John Smith.md", "# Updated\nNew content.\n")
+	content = (brain_settings.brain_path / "People" / "John Smith.md").read_text()
+	assert "New content." in content
+	assert "designer" not in content
+
+
+def test_write_note_rejects_path_traversal(brain_settings: Settings) -> None:
+	with pytest.raises(ValueError, match="outside"):
+		write_note(brain_settings, "../../etc/passwd", "evil")

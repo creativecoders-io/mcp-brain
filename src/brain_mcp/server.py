@@ -8,7 +8,7 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
-from .brain import list_notes, read_note, search_notes
+from .brain import list_notes, read_note, search_notes, write_note
 from .config import load_settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -34,6 +34,12 @@ def list_notes_tool(path: str | None = None) -> dict[str, Any]:
 def read_note_tool(path: str) -> dict[str, Any]:
 	"""Read one note file by relative path."""
 	return read_note(settings=settings, path=path)
+
+
+@app.tool(name="write_note", description="Write or overwrite a note in the brain directory. Use Inbox/ as default folder when no specific path is given.")
+def write_note_tool(path: str, content: str) -> dict[str, Any]:
+	"""Write a note at a relative path within the brain."""
+	return write_note(settings=settings, path=path, content=content)
 
 
 def main() -> None:
