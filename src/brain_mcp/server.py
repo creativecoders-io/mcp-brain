@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
@@ -36,8 +37,15 @@ def read_note_tool(path: str) -> dict[str, Any]:
 
 
 def main() -> None:
-	logger.info("Starting brain MCP server with stdio transport...")
-	app.run("stdio")
+	transport = os.getenv("MCP_TRANSPORT", "stdio")
+	if transport == "http":
+		host = os.getenv("MCP_HOST", "0.0.0.0")
+		port = int(os.getenv("PORT", "8002"))
+		logger.info(f"Starting brain MCP server with SSE transport on {host}:{port}...")
+		app.run("sse", host=host, port=port)
+	else:
+		logger.info("Starting brain MCP server with stdio transport...")
+		app.run("stdio")
 
 
 if __name__ == "__main__":
