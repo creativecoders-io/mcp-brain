@@ -65,3 +65,22 @@ def test_search_notes_matches_filename_and_content(brain_settings: Settings) -> 
 def test_search_notes_requires_non_empty_query(brain_settings: Settings) -> None:
 	with pytest.raises(ValueError, match="must not be empty"):
 		search_notes(brain_settings, "   ")
+
+
+def test_search_notes_ranks_by_relevance(brain_settings: Settings) -> None:
+	# "Community Festival" appears in filename AND content; should rank higher
+	# than "John Smith.md" which only mentions "Festival" in content
+	(brain_settings.brain_path / "Projects" / "Community Festival.md").write_text(
+		"Festival organizer: John. Festival theme: music.\n", encoding="utf-8"
+	)
+	result = search_notes(brain_settings, "Festival")
+	assert result["count"] >= 1
+	assert "score" in result["matches"][0]
+
+
+def test_search_notes_multi_term_returns_scores(brain_settings: Settings) -> None:
+	result = search_notes(brain_settings, "john designer")
+	assert result["count"] >= 1
+	for match in result["matches"]:
+		assert "score" in match
+		assert isinstance(match["score"], float)
