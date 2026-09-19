@@ -11,18 +11,25 @@ from .security import resolve_user_path
 
 logger = logging.getLogger(__name__)
 
+# In-process PDF text cache: (absolute_path, mtime) -> extracted text
+# Invalidates automatically when a file is modified.
+_pdf_cache: dict[tuple[str, float], str | None] = {}
+
 
 def _extract_pdf_text(path: Path) -> str | None:
-	"""Extract plain text from a PDF. Returns None if the PDF has no extractable text."""
-	try:
-		from pypdf import PdfReader
-		reader = PdfReader(str(path))
-		pages = [page.extract_text() or "" for page in reader.pages]
-		text = "\n".join(pages).strip()
-		return text if text else None
-	except Exception as exc:
-		logger.debug("Could not extract text from %s: %s", path.name, exc)
-		return None
+	"""Extract plain text from a PDF, using an in-memory cache keyed on (path, mtime)."""
+	key = (str(path.resolve()), path.stat().st_mtime)
+	if key not in _pdf_cache:
+		try:
+			from pypdf import PdfReader
+			reader = PdfReader(str(path))
+			pages = [page.extract_text() or "" for page in reader.pages]
+			text = "\n".join(pages).strip()
+			_pdf_cache[key] = text if text else None
+		except Exception as exc:
+			logger.debug("Could not extract text from %s: %s", path.name, exc)
+			_pdf_cache[key] = None
+	return _pdf_cache[key]
 
 
 def _read_file_text(path: Path) -> str | None:
