@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from brain_mcp.brain import list_notes, read_note, search_notes, write_note
+from brain_mcp.brain import find_note, list_notes, read_note, search_notes, write_note, write_notes_batch
 from brain_mcp.config import Settings
 
 
@@ -108,3 +108,75 @@ def test_write_note_overwrites_existing(brain_settings: Settings) -> None:
 def test_write_note_rejects_path_traversal(brain_settings: Settings) -> None:
 	with pytest.raises(ValueError, match="outside"):
 		write_note(brain_settings, "../../etc/passwd", "evil")
+
+
+# ── find_note ─────────────────────────────────────────────────────────────────
+
+def test_find_note_exact_match(brain_settings: Settings) -> None:
+	result = find_note(brain_settings, "John Smith")
+	assert result["found"] is True
+	assert result["path"] == "People/John Smith.md"
+	assert "designer" in result["content"]
+
+
+def test_find_note_slug_match(brain_settings: Settings) -> None:
+	result = find_note(brain_settings, "john-smith")
+	assert result["found"] is True
+	assert result["path"] == "People/John Smith.md"
+
+
+def test_find_note_not_found(brain_settings: Settings) -> None:
+	result = find_note(brain_settings, "Does Not Exist")
+	assert result["found"] is False
+	assert result["path"] is None
+	assert result["content"] is None
+	assert result["name"] == "Does Not Exist"
+
+
+def test_find_note_accented_name(brain_settings: Settings) -> None:
+	(brain_settings.brain_path / "People" / "joelle-van-dijk.md").write_text(
+		"# Joëlle van Dijk\nArtist.\n", encoding="utf-8"
+	)
+	result = find_note(brain_settings, "Joëlle van Dijk")
+	assert result["found"] is True
+	assert "joelle-van-dijk" in result["path"]
+
+
+def test_find_note_empty_name_raises(brain_settings: Settings) -> None:
+	with pytest.raises(ValueError, match="must not be empty"):
+		find_note(brain_settings, "   ")
+
+
+# ── write_notes_batch ─────────────────────────────────────────────────────────
+
+def test_write_notes_batch_creates_all_files(brain_settings: Settings) -> None:
+	notes = [
+		{"path": "people/alice.md", "content": "# Alice\nEngineer.\n"},
+		{"path": "people/bob.md", "content": "# Bob\nDesigner.\n"},
+		{"path": "MANIFEST.md", "content": "# Updated manifest\n"},
+	]
+	result = write_notes_batch(brain_settings, notes)
+	assert result["written"] == 3
+	assert len(result["notes"]) == 3
+	assert (brain_settings.brain_path / "people" / "alice.md").read_text() == "# Alice\nEngineer.\n"
+	assert (brain_settings.brain_path / "people" / "bob.md").read_text() == "# Bob\nDesigner.\n"
+
+
+def test_write_notes_batch_empty_raises(brain_settings: Settings) -> None:
+	with pytest.raises(ValueError, match="must not be empty"):
+		write_notes_batch(brain_settings, [])
+
+
+def test_write_notes_batch_rejects_traversal(brain_settings: Settings) -> None:
+	with pytest.raises(ValueError, match="outside"):
+		write_notes_batch(brain_settings, [{"path": "../../etc/passwd", "content": "evil"}])
+
+
+def test_write_notes_batch_traversal_mid_list_writes_nothing(brain_settings: Settings) -> None:
+	notes = [
+		{"path": "people/good.md", "content": "safe"},
+		{"path": "../../etc/passwd", "content": "evil"},
+	]
+	with pytest.raises(ValueError, match="outside"):
+		write_notes_batch(brain_settings, notes)
+	assert not (brain_settings.brain_path / "people" / "good.md").exists()

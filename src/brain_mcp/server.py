@@ -8,7 +8,7 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
-from .brain import list_notes, read_note, search_notes, write_note
+from .brain import find_note, list_notes, read_note, search_notes, write_note, write_notes_batch
 from .config import load_settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -40,6 +40,33 @@ def read_note_tool(path: str) -> dict[str, Any]:
 def write_note_tool(path: str, content: str) -> dict[str, Any]:
 	"""Write a note at a relative path within the brain."""
 	return write_note(settings=settings, path=path, content=content)
+
+
+@app.tool(
+	name="find_note",
+	description=(
+		"Find an existing note by person, company, or project name using exact or "
+		"slug-normalized matching. Faster than search_notes for known names. "
+		"Returns found=true with path and content, or found=false when no note exists."
+	),
+)
+def find_note_tool(name: str) -> dict[str, Any]:
+	"""Look up a note by name without BM25 search."""
+	return find_note(settings=settings, name=name)
+
+
+@app.tool(
+	name="write_notes_batch",
+	description=(
+		"Write or overwrite multiple notes in a single tool call. "
+		"Use this instead of sequential write_note calls when creating a new note "
+		"and also updating MANIFEST.md and back-linking related notes. "
+		"Validates all paths before writing any (atomic on bad paths)."
+	),
+)
+def write_notes_batch_tool(notes: list[dict[str, str]]) -> dict[str, Any]:
+	"""Write several notes in one call. Each entry must have 'path' and 'content' keys."""
+	return write_notes_batch(settings=settings, notes=notes)
 
 
 def main() -> None:

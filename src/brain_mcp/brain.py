@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +42,38 @@ def _read_file_text(path: Path) -> str | None:
 		return path.read_text(encoding="utf-8")
 	except (UnicodeDecodeError, OSError):
 		return None
+
+
+def _slugify(text: str) -> str:
+	"""Lowercase, strip accents, replace non-alphanumeric runs with hyphens."""
+	nfkd = unicodedata.normalize("NFKD", text)
+	ascii_str = "".join(c for c in nfkd if not unicodedata.combining(c))
+	return re.sub(r"[^a-z0-9]+", "-", ascii_str.lower()).strip("-")
+
+
+def find_note(settings: Settings, name: str) -> dict[str, Any]:
+	"""Find a note by exact or slug-normalized stem match (deterministic, no BM25)."""
+	_require_root_exists(settings)
+
+	stripped = (name or "").strip()
+	if not stripped:
+		raise ValueError("name must not be empty")
+
+	needle_lower = stripped.lower()
+	needle_slug = _slugify(stripped)
+
+	for file_path in sorted(settings.brain_path.rglob("*.md")):
+		stem = file_path.stem
+		if stem.lower() == needle_lower or _slugify(stem) == needle_slug:
+			content = _read_file_text(file_path)
+			return {
+				"found": True,
+				"path": _to_relative(settings, file_path),
+				"content": content,
+				"name": name,
+			}
+
+	return {"found": False, "path": None, "content": None, "name": name}
 
 
 def _require_root_exists(settings: Settings) -> None:
@@ -141,7 +175,6 @@ def search_notes(settings: Settings, query: str) -> dict[str, Any]:
 				"max_results": settings.max_results, "matches": []}
 
 	# Tokenise: lowercase split on whitespace/punctuation
-	import re
 	def tokenise(text: str) -> list[str]:
 		return re.findall(r"[^\s\W]+", text.lower())
 
@@ -202,4 +235,30 @@ def write_note(settings: Settings, path: str, content: str) -> dict[str, Any]:
 		"size": target.stat().st_size,
 		"written": True,
 	}
+
+
+def write_notes_batch(settings: Settings, notes: list[dict[str, str]]) -> dict[str, Any]:
+	"""Validate all paths then write all notes. Raises before any write on bad paths."""
+	_require_root_exists(settings)
+
+	if not notes:
+		raise ValueError("notes list must not be empty")
+
+	# Validate every path before touching the filesystem (fail-atomic)
+	resolved: list[tuple[Path, str]] = []
+	for note in notes:
+		target = resolve_user_path(settings.brain_path, note["path"])
+		resolved.append((target, note["content"]))
+
+	results = []
+	for target, content in resolved:
+		target.parent.mkdir(parents=True, exist_ok=True)
+		target.write_text(content, encoding="utf-8")
+		results.append({
+			"path": _to_relative(settings, target),
+			"size": target.stat().st_size,
+			"written": True,
+		})
+
+	return {"written": len(results), "notes": results}
 
